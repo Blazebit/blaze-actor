@@ -29,10 +29,12 @@ import com.blazebit.actor.spi.Consumer;
 import com.blazebit.actor.spi.ConsumerListenerFactory;
 import com.blazebit.actor.spi.Scheduler;
 import com.blazebit.actor.spi.SchedulerFactory;
+import com.blazebit.actor.spi.StateReturningEvent;
 
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -42,7 +44,10 @@ import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -222,6 +227,10 @@ public class ActorContextBuilderImpl implements ActorContextBuilder {
         return this;
     }
 
+    /**
+     * @author Christian Beikov
+     * @since 1.0.0
+     */
     protected static class DefaultActorContext implements ActorContext {
 
         private final ActorManager actorManager;
@@ -287,6 +296,48 @@ public class ActorContextBuilderImpl implements ActorContextBuilder {
         }
     }
 
+    /**
+     * @author Christian Beikov
+     * @since 1.0.0
+     */
+    private static class SimpleFuture<T> implements Future<T> {
+
+        private final T result;
+
+        public SimpleFuture(T result) {
+            this.result = result;
+        }
+
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            return false;
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return false;
+        }
+
+        @Override
+        public boolean isDone() {
+            return true;
+        }
+
+        @Override
+        public T get() throws InterruptedException, ExecutionException {
+            return result;
+        }
+
+        @Override
+        public T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+            return result;
+        }
+    }
+
+    /**
+     * @author Christian Beikov
+     * @since 1.0.0
+     */
     private static class CapturingSchedulerFactory implements SchedulerFactory {
 
         private final List<Scheduler> schedulers = new CopyOnWriteArrayList<>();
@@ -333,6 +384,10 @@ public class ActorContextBuilderImpl implements ActorContextBuilder {
         }
     }
 
+    /**
+     * @author Christian Beikov
+     * @since 1.0.0
+     */
     private static class NoClusterStateManager implements ClusterStateManager, ClusterNodeInfo {
 
         private final Map<Class<?>, List<java.util.function.Consumer<Serializable>>> listeners = new ConcurrentHashMap<>();
@@ -353,12 +408,12 @@ public class ActorContextBuilderImpl implements ActorContextBuilder {
         }
 
         @Override
-        public void fireEventExcludeSelf(Serializable event) {
+        public void fireEventExcludeSelf(Serializable event, boolean await) {
             // Noop because there is no cluster
         }
 
         @Override
-        public void fireEvent(Serializable event) {
+        public void fireEvent(Serializable event, boolean await) {
             java.util.function.Consumer<Class<?>> consumer = eventClass -> {
                 List<java.util.function.Consumer<Serializable>> consumers = listeners.get(eventClass);
                 if (consumers != null) {
@@ -372,6 +427,23 @@ public class ActorContextBuilderImpl implements ActorContextBuilder {
                 visitInterfaces(consumer, clazz, visitedClasses);
                 clazz = clazz.getSuperclass();
             } while (clazz != null);
+        }
+
+        @Override
+        public <T> Map<ClusterNodeInfo, Future<T>> fireEvent(StateReturningEvent<T> event) {
+            fireEvent((Serializable) event, false);
+            return Collections.singletonMap(getCurrentNodeInfo(), new SimpleFuture<>(event.getResult()));
+        }
+
+        @Override
+        public <T> Map<ClusterNodeInfo, Future<T>> fireEventExcludeSelf(StateReturningEvent<T> event) {
+            // Noop because there is no cluster
+            return null;
+        }
+
+        @Override
+        public boolean isStandalone() {
+            return true;
         }
 
         private void visitInterfaces(java.util.function.Consumer<Class<?>> consumer, Class<?> clazz, Set<Class<?>> visitedClasses) {
@@ -406,6 +478,10 @@ public class ActorContextBuilderImpl implements ActorContextBuilder {
         }
     }
 
+    /**
+     * @author Christian Beikov
+     * @since 1.0.0
+     */
     private static class ActorEntry {
         private final ScheduledActor actor;
         private final long initialDelayMillis;

@@ -98,7 +98,7 @@ public class ActorManagerImpl implements ActorManager {
         if (!rescheduleActorLocally(name, delayMillis)) {
             throw new ActorException("No actor with the name '" + name + "' is registered!");
         }
-        clusterStateManager.fireEventExcludeSelf(new ActorRescheduleEvent(name));
+        clusterStateManager.fireEventExcludeSelf(new ActorRescheduleEvent(name), false);
     }
 
     private boolean rescheduleActorLocally(String name, long delayMillis) {

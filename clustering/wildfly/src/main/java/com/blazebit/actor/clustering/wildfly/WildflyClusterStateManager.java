@@ -18,6 +18,7 @@ package com.blazebit.actor.clustering.wildfly;
 import com.blazebit.actor.spi.ClusterNodeInfo;
 import com.blazebit.actor.spi.ClusterStateListener;
 import com.blazebit.actor.spi.ClusterStateManager;
+import com.blazebit.actor.spi.StateReturningEvent;
 import org.wildfly.clustering.dispatcher.Command;
 import org.wildfly.clustering.dispatcher.CommandDispatcher;
 import org.wildfly.clustering.dispatcher.CommandDispatcherFactory;
@@ -27,17 +28,20 @@ import org.wildfly.clustering.group.Node;
 
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -95,22 +99,9 @@ public class WildflyClusterStateManager implements ClusterStateManager {
      * Starts the cluster state manager.
      */
     public void start() {
+        fireEventDispatcher = this.factory.createCommandDispatcher("fireEventDispatcher", this);
         final Node localNode = channelGroup.getLocalNode();
         updateCurrentPosition(localNode, channelGroup.getNodes());
-
-//        for (Node node : nodes) {
-//            String text = "I execute on server " + node.getName() + " and address " + node.getSocketAddress();
-//
-//            try (CommandDispatcher<String> dispatcher = this.factory.createCommandDispatcher("id1", text)) {
-//                dispatcher.executeOnNode(new PrintWriterCommand(), node);
-//            } catch (Exception ex) {
-//                System.err.println("Could not broadcast!");
-//                ex.printStackTrace(System.err);
-//            }
-//        }
-
-        fireEventDispatcher = this.factory.createCommandDispatcher("fireEventDispatcher", this);
-
         channelGroup.addListener(new Group.Listener() {
             @Override
             public void membershipChanged(List<Node> previousMembers, List<Node> members, boolean merged) {
@@ -142,6 +133,11 @@ public class WildflyClusterStateManager implements ClusterStateManager {
         listeners.computeIfAbsent(eventClass, k -> new CopyOnWriteArrayList<>()).add((java.util.function.Consumer<Serializable>) listener);
     }
 
+    private <T> T fireEventLocally(StateReturningEvent<T> event) {
+        fireEventLocally((Serializable) event);
+        return event.getResult();
+    }
+
     private void fireEventLocally(Serializable event) {
         java.util.function.Consumer<Class<?>> consumer = eventClass -> {
             List<java.util.function.Consumer<Serializable>> consumers = listeners.get(eventClass);
@@ -170,31 +166,74 @@ public class WildflyClusterStateManager implements ClusterStateManager {
     }
 
     @Override
-    public void fireEvent(Serializable event) {
-        fireEvent(event, EMPTY);
+    public void fireEvent(Serializable event, boolean await) {
+        fireEvent(event, EMPTY, await);
     }
 
     @Override
-    public void fireEventExcludeSelf(Serializable event) {
-        fireEvent(event, localNode);
+    public void fireEventExcludeSelf(Serializable event, boolean await) {
+        fireEvent(event, localNode, await);
     }
 
-    private void fireEvent(Serializable event, Node[] excludedNodes) {
+    @Override
+    public <T> Map<ClusterNodeInfo, Future<T>> fireEvent(StateReturningEvent<T> event) {
+        return fireEvent(event, EMPTY);
+    }
+
+    @Override
+    public <T> Map<ClusterNodeInfo, Future<T>> fireEventExcludeSelf(StateReturningEvent<T> event) {
+        return fireEvent(event, localNode);
+    }
+
+    private void fireEvent(Serializable event, Node[] excludedNodes, boolean await) {
         try {
             Map<Node, CommandResponse<Object>> results = fireEventDispatcher.executeOnCluster(new FireEventCommand(event), excludedNodes);
+            List<Throwable> exceptions = null;
             for (final Map.Entry<Node, CommandResponse<Object>> result : results.entrySet()) {
-                LOG.fine(() -> {
-                    try {
-                        return "Command result: Node [" + result.getKey().getName() + "@" + result.getKey().getSocketAddress().toString() + "]: "
-                                + (result.getValue() == null ? "null" : (result.getValue().get() == null ? "null" : result.getValue().get().toString()));
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
+                if (await) {
+                    Object response;
+                    if (result.getValue() != null) {
+                        try {
+                            response = result.getValue().get();
+                            LOG.fine(() -> "Command result: Node [" + result.getKey().getName() + "@" + result.getKey().getSocketAddress().toString() + "]: " + response);
+                        } catch (ExecutionException ex) {
+                            if (exceptions == null) {
+                                exceptions = new ArrayList<>();
+                            }
+
+                            exceptions.add(ex);
+                            LOG.fine(() -> "Command exception: Node [" + result.getKey().getName() + "@" + result.getKey().getSocketAddress().toString() + "]: " + ex);
+                        }
                     }
-                });
+                }
             }
         } catch (Exception ex) {
-            LOG.log(Level.SEVERE, "Could not broadcast!", ex);
+            throw new RuntimeException("Could not broadcast!", ex);
         }
+    }
+
+    private <T> Map<ClusterNodeInfo, Future<T>> fireEvent(StateReturningEvent<T> event, Node[] excludedNodes) {
+        try {
+            Map<ClusterNodeInfo, Future<T>> map = new HashMap<>();
+            Map<Node, CommandResponse<T>> results = fireEventDispatcher.executeOnCluster(new FireStateReturningEventCommand<>(event), excludedNodes);
+            Node coordinatorNode = channelGroup.getCoordinatorNode();
+            List<Node> nodes = getSortedNodeList();
+            ClusterNodeInfo clusterNodeInfo = currentNodeInfo.get();
+            for (final Map.Entry<Node, CommandResponse<T>> result : results.entrySet()) {
+                Node node = result.getKey();
+                int index = nodes.indexOf(node);
+                ClusterNodeInfo nodeInfo = new DefaultClusterNodeInfo(coordinatorNode.equals(node), node.getSocketAddress().getAddress().getHostAddress(), clusterNodeInfo.getClusterVersion(), index, nodes.size());
+                map.put(nodeInfo, new CommandResponseFuture<>(result.getValue()));
+            }
+            return map;
+        } catch (Exception ex) {
+            throw new RuntimeException("Could not broadcast!", ex);
+        }
+    }
+
+    @Override
+    public boolean isStandalone() {
+        return false;
     }
 
     /**
@@ -203,7 +242,7 @@ public class WildflyClusterStateManager implements ClusterStateManager {
      */
     private static class FireEventCommand implements Command<Object, WildflyClusterStateManager> {
         private static final long serialVersionUID = 1L;
-        private Serializable event;
+        private final Serializable event;
 
         public FireEventCommand(Serializable event) {
             this.event = event;
@@ -211,14 +250,75 @@ public class WildflyClusterStateManager implements ClusterStateManager {
 
         @Override
         public Object execute(WildflyClusterStateManager context) throws Exception {
-            LOG.fine("Fire event");
             context.fireEventLocally(event);
             return "";
         }
 
     }
 
-    private void updateCurrentPosition(Node localNode, List<Node> nodes) {
+    /**
+     * @author Christian Beikov
+     * @since 1.0.0
+     */
+    private static class FireStateReturningEventCommand<T> implements Command<T, WildflyClusterStateManager> {
+        private static final long serialVersionUID = 1L;
+        private final StateReturningEvent<T> event;
+
+        public FireStateReturningEventCommand(StateReturningEvent<T> event) {
+            this.event = event;
+        }
+
+        @Override
+        public T execute(WildflyClusterStateManager context) throws Exception {
+            return context.fireEventLocally(event);
+        }
+
+    }
+
+    /**
+     * @author Christian Beikov
+     * @since 1.0.0
+     */
+    private static class CommandResponseFuture<T> implements Future<T> {
+        private static final long serialVersionUID = 1L;
+        private final CommandResponse<T> response;
+
+        public CommandResponseFuture(CommandResponse<T> response) {
+            this.response = response;
+        }
+
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            return false;
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return false;
+        }
+
+        @Override
+        public boolean isDone() {
+            return true;
+        }
+
+        @Override
+        public T get() throws InterruptedException, ExecutionException {
+            return response.get();
+        }
+
+        @Override
+        public T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+            return response.get();
+        }
+
+    }
+
+    private List<Node> getSortedNodeList() {
+        return getSortedNodeList(channelGroup.getLocalNode(), channelGroup.getNodes());
+    }
+
+    private List<Node> getSortedNodeList(Node localNode, List<Node> nodes) {
         List<Node> nodeList = new ArrayList<>(nodes.size() + 1);
 
         for (int i = 0; i < nodes.size(); i++) {
@@ -229,7 +329,12 @@ public class WildflyClusterStateManager implements ClusterStateManager {
         }
 
         nodeList.add(localNode);
-        Collections.sort(nodeList, NODE_COMPARATOR);
+        nodeList.sort(NODE_COMPARATOR);
+        return nodeList;
+    }
+
+    private void updateCurrentPosition(Node localNode, List<Node> nodes) {
+        List<Node> nodeList = getSortedNodeList(localNode, nodes);
         int newPosition = nodeList.indexOf(localNode);
 
         boolean isCoordinator = channelGroup.isCoordinator();
@@ -245,16 +350,5 @@ public class WildflyClusterStateManager implements ClusterStateManager {
     private static String members(List<Node> nodeList) {
         return nodeList.stream().map(node -> node.getSocketAddress().getAddress().getHostAddress()).collect(Collectors.joining(", ", "(", ")"));
     }
-//
-//    public static class PrintWriterCommand implements Command<Object, String> {
-//
-//        private static final long serialVersionUID = 1L;
-//
-//        @Override
-//        public Object execute(String str) throws Exception {
-//            System.out.println(str);
-//            return null;
-//        }
-//
-//    }
+
 }

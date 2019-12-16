@@ -17,6 +17,8 @@
 package com.blazebit.actor.spi;
 
 import java.io.Serializable;
+import java.util.Map;
+import java.util.concurrent.Future;
 
 /**
  * A manager for the state of a cluster.
@@ -53,14 +55,41 @@ public interface ClusterStateManager {
      * Fires the given event throughout the whole cluster.
      *
      * @param event The event to fire
+     * @param await Whether to await all results
      */
-    public void fireEvent(Serializable event);
+    public void fireEvent(Serializable event, boolean await);
 
     /**
      * Fires the given event throughout the whole cluster except in the current JVM.
      *
      * @param event The event to fire
+     * @param await Whether to await all results
      */
-    public void fireEventExcludeSelf(Serializable event);
+    public void fireEventExcludeSelf(Serializable event, boolean await);
+
+    /**
+     * Fires the given event throughout the whole cluster.
+     *
+     * @param event The event to fire
+     * @param <T> The result type of the event
+     * @return The return values of the event
+     */
+    public <T> Map<ClusterNodeInfo, Future<T>> fireEvent(StateReturningEvent<T> event);
+
+    /**
+     * Fires the given event throughout the whole cluster except in the current JVM.
+     *
+     * @param event The event to fire
+     * @param <T> The result type of the event
+     * @return The return values of the event
+     */
+    public <T> Map<ClusterNodeInfo, Future<T>> fireEventExcludeSelf(StateReturningEvent<T> event);
+
+    /**
+     * Returns <code>true</code> if this is a standalone instance without real clustering support, otherwise <code>false</code>.
+     *
+     * @return whether this is standalone instance without real clustering support
+     */
+    public boolean isStandalone();
 
 }
