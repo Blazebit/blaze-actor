@@ -28,7 +28,7 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
@@ -130,7 +130,7 @@ public class ActorManagerImpl implements ActorManager {
         private final Scheduler scheduler;
         private final ConcurrentMap<String, ActorEntry> registeredActors;
         private final Lock running = new ReentrantLock();
-        private final AtomicReference<Thread> waitingThread = new AtomicReference<>();
+        private final AtomicBoolean reRun = new AtomicBoolean();
         private volatile boolean cancelled;
 
         public ActorEntry(String name, ScheduledActor actor, Scheduler scheduler, ConcurrentMap<String, ActorEntry> registeredActors) {
@@ -142,7 +142,20 @@ public class ActorManagerImpl implements ActorManager {
 
         public void reschedule(long delayMillis) {
             if (!cancelled) {
-                scheduler.schedule(this, delayMillis);
+                // If this should be scheduled immediately, we try to signal a re-run to an existing thread
+                if (delayMillis == 0L && reRun.compareAndSet(false, true)) {
+                    // If we can acquire the lock, no thread is running this
+                    if (running.tryLock()) {
+                        // So we unlock and reset the re-run flag
+                        running.unlock();
+                        reRun.set(false);
+                        // And simply schedule a run
+                        scheduler.schedule(this, delayMillis);
+                    }
+                    // If we weren't able to acquire a lock, the running thread will take care of the re-run
+                } else {
+                    scheduler.schedule(this, delayMillis);
+                }
             }
         }
 
@@ -153,30 +166,50 @@ public class ActorManagerImpl implements ActorManager {
 
         @Override
         public Void call() {
-            // For the rare case that the actor is scheduled multiple times, we protect ourselves by only allowing a single run
-            if (!running.tryLock()) {
-                // There may only be one thread waiting
-                Thread thread = Thread.currentThread();
-                if (waitingThread.compareAndSet(null, thread)) {
-                    running.lock();
-                    waitingThread.set(null);
-                } else {
+            // If we set this to true...
+            if (reRun.compareAndSet(false, true)) {
+                // And the actor is already running...
+                if (!running.tryLock()) {
+                    // Then we are done, as the running actor will re-run
                     return null;
                 }
+                // Otherwise we just run the actor as we now have the lock
+            } else {
+                // If re-run was set by another thread, it will be handled by that thread or a currently running one
+                return null;
             }
-            try {
-                if (!cancelled) {
+
+            // We have the lock and are about to run, so this is just like a re-run
+            reRun.set(false);
+            while (!cancelled) {
+                try {
                     ActorRunResult runResult = actor.work();
                     if (runResult.isReschedule()) {
-                        reschedule(runResult.getDelayMillis());
+                        if (runResult.getDelayMillis() == 0L) {
+                            reRun.set(true);
+                        } else {
+                            reschedule(runResult.getDelayMillis());
+                        }
                     } else if (runResult.isDone()) {
                         cancel();
-                    } else {
-//                    runner.onSuspend();
+                        break;
                     }
+                } catch (Throwable t) {
+                    LOG.log(Level.SEVERE, "Error during actor execution", t);
+                    cancel();
+                    break;
+                } finally {
+                    running.unlock();
                 }
-            } finally {
-                running.unlock();
+                // If no immediate re-run is scheduled we are done
+                if (!reRun.compareAndSet(true, false)) {
+                    break;
+                }
+                // If this thread should handle the re-run, try locking again
+                if (!running.tryLock()) {
+                    // If another thread was faster, because e.g. we have been suspended, we are done
+                    break;
+                }
             }
             return null;
         }
