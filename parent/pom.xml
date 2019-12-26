@@ -17,8 +17,7 @@
     <properties>
         <blaze-actor.codename>Copper</blaze-actor.codename>
 
-        <version.blaze-utils>0.1.18</version.blaze-utils>
-        <version.blaze-persistence>1.4.0-Alpha1</version.blaze-persistence>
+        <version.blaze-utils>0.1.19</version.blaze-utils>
         <version.weld>2.4.5.Final</version.weld>
         <version.spring>5.0.7.RELEASE</version.spring>
         <version.junit>4.12</version.junit>
