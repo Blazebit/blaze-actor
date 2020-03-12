@@ -21,6 +21,8 @@
         <version.weld>2.4.5.Final</version.weld>
         <version.spring>5.0.7.RELEASE</version.spring>
         <version.junit>4.12</version.junit>
+
+        <version.processor.plugin>3.3.2</version.processor.plugin>
     </properties>
 
     <dependencyManagement>
@@ -68,6 +70,15 @@
     </dependencyManagement>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.bsc.maven</groupId>
+                    <artifactId>maven-processor-plugin</artifactId>
+                    <version>${version.processor.plugin}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
