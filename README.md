@@ -38,7 +38,7 @@ Blaze-Actor is split up into different modules. We recommend that you define a v
 
 ```xml
 <properties>
-    <blaze-actor.version>1.0.0-Alpha3</blaze-actor.version>
+    <blaze-actor.version>1.0.0-Alpha4</blaze-actor.version>
 </properties>
 ```
 
