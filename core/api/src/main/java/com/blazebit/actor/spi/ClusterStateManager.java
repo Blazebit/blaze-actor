@@ -86,6 +86,13 @@ public interface ClusterStateManager {
     public <T> Map<ClusterNodeInfo, Future<T>> fireEventExcludeSelf(StateReturningEvent<T> event);
 
     /**
+     * Returns the lock service for the cluster.
+     *
+     * @return The lock service
+     */
+    public LockService getLockService();
+
+    /**
      * Returns <code>true</code> if this is a standalone instance without real clustering support, otherwise <code>false</code>.
      *
      * @return whether this is standalone instance without real clustering support

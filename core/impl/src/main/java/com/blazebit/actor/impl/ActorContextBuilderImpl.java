@@ -27,11 +27,14 @@ import com.blazebit.actor.spi.ClusterStateListener;
 import com.blazebit.actor.spi.ClusterStateManager;
 import com.blazebit.actor.spi.Consumer;
 import com.blazebit.actor.spi.ConsumerListenerFactory;
+import com.blazebit.actor.spi.LockService;
 import com.blazebit.actor.spi.Scheduler;
 import com.blazebit.actor.spi.SchedulerFactory;
 import com.blazebit.actor.spi.StateReturningEvent;
 
 import java.io.Serializable;
+import java.lang.ref.ReferenceQueue;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -49,6 +52,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * @author Christian Beikov
@@ -391,6 +396,7 @@ public class ActorContextBuilderImpl implements ActorContextBuilder {
     private static class NoClusterStateManager implements ClusterStateManager, ClusterNodeInfo {
 
         private final Map<Class<?>, List<java.util.function.Consumer<Serializable>>> listeners = new ConcurrentHashMap<>();
+        private final LockService lockService = new LocalLockService();
 
         @Override
         public ClusterNodeInfo getCurrentNodeInfo() {
@@ -438,7 +444,12 @@ public class ActorContextBuilderImpl implements ActorContextBuilder {
         @Override
         public <T> Map<ClusterNodeInfo, Future<T>> fireEventExcludeSelf(StateReturningEvent<T> event) {
             // Noop because there is no cluster
-            return null;
+            return Collections.emptyMap();
+        }
+
+        @Override
+        public LockService getLockService() {
+            return lockService;
         }
 
         @Override
@@ -475,6 +486,53 @@ public class ActorContextBuilderImpl implements ActorContextBuilder {
         @Override
         public int getClusterSize() {
             return 1;
+        }
+    }
+
+    /**
+     * @author Christian Beikov
+     * @since 1.0.0
+     */
+    private static class LocalLockService implements LockService {
+
+        private final ReferenceQueue<Lock> referenceQueue = new ReferenceQueue<>();
+        private final Map<String, WeakLockReference> locks = new ConcurrentHashMap<>();
+
+        @Override
+        public Lock getLock(String name) {
+            WeakLockReference ref;
+            while ((ref = (WeakLockReference) referenceQueue.poll()) != null) {
+                locks.remove(ref.name);
+            }
+            WeakLockReference weakReference = locks.computeIfAbsent(name, k -> new WeakLockReference(new ReentrantLock(), referenceQueue, k));
+            Lock l = weakReference.get();
+            while (l == null) {
+                WeakLockReference old = weakReference;
+                weakReference = locks.compute(name, (k, v) -> {
+                    if (v == old) {
+                        return new WeakLockReference(new ReentrantLock(), referenceQueue, k);
+                    } else {
+                        return v;
+                    }
+                });
+                l = weakReference.get();
+            }
+
+            return l;
+        }
+    }
+
+    /**
+     * @author Christian Beikov
+     * @since 1.0.0
+     */
+    private static class WeakLockReference extends WeakReference<Lock> {
+
+        final String name;
+
+        public WeakLockReference(Lock referent, ReferenceQueue<? super Lock> q, String name) {
+            super(referent, q);
+            this.name = name;
         }
     }
 

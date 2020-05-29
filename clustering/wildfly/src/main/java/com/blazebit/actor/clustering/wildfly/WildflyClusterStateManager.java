@@ -18,6 +18,7 @@ package com.blazebit.actor.clustering.wildfly;
 import com.blazebit.actor.spi.ClusterNodeInfo;
 import com.blazebit.actor.spi.ClusterStateListener;
 import com.blazebit.actor.spi.ClusterStateManager;
+import com.blazebit.actor.spi.LockService;
 import com.blazebit.actor.spi.StateReturningEvent;
 import org.wildfly.clustering.dispatcher.Command;
 import org.wildfly.clustering.dispatcher.CommandDispatcher;
@@ -72,10 +73,11 @@ public class WildflyClusterStateManager implements ClusterStateManager {
     };
 
 //    @Resource(lookup = "java:jboss/clustering/group/ee")
-    private Group channelGroup;
-
+    private final Group channelGroup;
 //    @Resource(lookup = "java:jboss/clustering/dispatcher/ee")
-    private CommandDispatcherFactory factory;
+    private final CommandDispatcherFactory factory;
+//    @Resource(lookup = "java:jboss/jgroups/channel/ee")
+    private final LockService lockService;
 
     private final List<ClusterStateListener> clusterStateListeners = new CopyOnWriteArrayList<>();
     private final Map<Class<?>, List<java.util.function.Consumer<Serializable>>> listeners = new ConcurrentHashMap<>();
@@ -88,10 +90,12 @@ public class WildflyClusterStateManager implements ClusterStateManager {
      *
      * @param channelGroup The channel group
      * @param factory The dispatcher factory
+     * @param lockService The cluster lock service
      */
-    public WildflyClusterStateManager(Group channelGroup, CommandDispatcherFactory factory) {
+    public WildflyClusterStateManager(Group channelGroup, CommandDispatcherFactory factory, LockService lockService) {
         this.channelGroup = channelGroup;
         this.factory = factory;
+        this.lockService = lockService;
         this.localNode = new Node[]{channelGroup.getLocalNode()};
     }
 
@@ -229,6 +233,11 @@ public class WildflyClusterStateManager implements ClusterStateManager {
         } catch (Exception ex) {
             throw new RuntimeException("Could not broadcast!", ex);
         }
+    }
+
+    @Override
+    public LockService getLockService() {
+        return lockService;
     }
 
     @Override
