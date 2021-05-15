@@ -10,6 +10,10 @@
 
     <artifactId>blaze-actor-core-api</artifactId>
 
+    <properties>
+        <module.name>com.blazebit.actor.core</module.name>
+    </properties>
+
     <dependencies>
         <!-- Test dependencies -->
 		<dependency>

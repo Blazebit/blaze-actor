@@ -9,6 +9,10 @@
 
     <artifactId>blaze-actor-scheduler-spring</artifactId>
 
+    <properties>
+        <module.name>com.blazebit.actor.scheduler.spring</module.name>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>${project.groupId}</groupId>

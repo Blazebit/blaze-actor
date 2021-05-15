@@ -9,6 +9,10 @@
 
     <artifactId>blaze-actor-consumer-memory</artifactId>
 
+    <properties>
+        <module.name>com.blazebit.actor.consumer.memory</module.name>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>${project.groupId}</groupId>
