@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.com/Blazebit/blaze-actor.svg?branch=master)](https://travis-ci.org/Blazebit/blaze-actor)
+[![Blaze-Actor CI](https://github.com/Blazebit/blaze-actor/actions/workflows/ci.yaml/badge.svg)](https://github.com/Blazebit/blaze-actor/actions/workflows/ci.yaml)
 
 [![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.blazebit/blaze-actor-core-api/badge.svg)](https://maven-badges.herokuapp.com/maven-central/com.blazebit/blaze-actor-core-api)
 [![Slack Status](https://blazebit.herokuapp.com/badge.svg)](https://blazebit.herokuapp.com)
@@ -38,7 +38,7 @@ Blaze-Actor is split up into different modules. We recommend that you define a v
 
 ```xml
 <properties>
-    <blaze-actor.version>1.0.0-Alpha4</blaze-actor.version>
+    <blaze-actor.version>1.0.0-Alpha5</blaze-actor.version>
 </properties>
 ```
 
