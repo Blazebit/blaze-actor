@@ -11,7 +11,7 @@
 
     <properties>
         <module.name>com.blazebit.actor.consumer.postgresql.listen</module.name>
-        <version.postgresql-jdbc>42.2.2</version.postgresql-jdbc>
+        <version.postgresql-jdbc>42.4.1</version.postgresql-jdbc>
         <version.pgjdbc-ng>0.8.2</version.pgjdbc-ng>
     </properties>
 
