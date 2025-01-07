@@ -14,7 +14,7 @@ jobs:
       - name: Set up Requested JDK
         uses: actions/setup-java@v3
         with:
-          java-version: ${{ steps.jdk.outputs.version }}
+          java-version: 17
           distribution: temurin
       - name: Get year/month for cache key
         id: get-date
