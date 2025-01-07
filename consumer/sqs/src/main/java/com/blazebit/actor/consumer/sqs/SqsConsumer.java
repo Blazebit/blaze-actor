@@ -17,29 +17,29 @@
 package com.blazebit.actor.consumer.sqs;
 
 import com.amazon.sqs.javamessaging.ProviderConfiguration;
-import com.amazon.sqs.javamessaging.SQSConnection;
 import com.amazon.sqs.javamessaging.SQSConnectionFactory;
-import com.amazonaws.auth.AWSCredentials;
-import com.amazonaws.auth.AWSStaticCredentialsProvider;
-import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.services.sqs.AmazonSQS;
-import com.amazonaws.services.sqs.AmazonSQSClient;
 import com.blazebit.actor.spi.Consumer;
 import com.blazebit.actor.spi.ConsumerListener;
 
-import javax.jms.Connection;
-import javax.jms.ConnectionFactory;
-import javax.jms.IllegalStateException;
-import javax.jms.JMSException;
-import javax.jms.Message;
-import javax.jms.MessageConsumer;
-import javax.jms.Session;
+import jakarta.jms.Connection;
+import jakarta.jms.ConnectionFactory;
+import jakarta.jms.IllegalStateException;
+import jakarta.jms.JMSException;
+import jakarta.jms.Message;
+import jakarta.jms.MessageConsumer;
+import jakarta.jms.Session;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import com.amazon.sqs.javamessaging.SQSConnection;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.sqs.SqsClient;
 
 /**
  * A consumer for the AWS SQS API that makes use of the JMS wrapper.
@@ -251,12 +251,12 @@ public class SqsConsumer implements Consumer<Message>, Runnable {
          * @return a new SQS JMS ConnectionFactory
          */
         public SQSConnectionFactory createConnectionFactory() {
-            AWSCredentials credentials;
+            AwsCredentials credentials;
 
             if (accessKey == null || secretKey == null) {
                 throw new IllegalArgumentException("No AWS access key and secret key given for SQS queue!");
             } else {
-                credentials = new BasicAWSCredentials(accessKey, secretKey);
+                credentials = AwsBasicCredentials.create(accessKey, secretKey);
             }
 
             if (region == null) {
@@ -265,9 +265,9 @@ public class SqsConsumer implements Consumer<Message>, Runnable {
 
             ProviderConfiguration providerConfiguration = new ProviderConfiguration();
             providerConfiguration.withNumberOfMessagesToPrefetch(prefetchSize);
-            AmazonSQS sqs = AmazonSQSClient.builder()
-                    .withCredentials(new AWSStaticCredentialsProvider(credentials))
-                    .withRegion(region)
+            SqsClient sqs = SqsClient.builder()
+                    .credentialsProvider(StaticCredentialsProvider.create(credentials))
+                    .region(Region.of(region))
                     .build();
             return new SQSConnectionFactory(providerConfiguration, sqs);
         }
