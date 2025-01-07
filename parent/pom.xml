@@ -19,7 +19,7 @@
 
         <version.blaze-utils>0.1.21</version.blaze-utils>
         <version.weld>2.4.5.Final</version.weld>
-        <version.spring>5.0.7.RELEASE</version.spring>
+        <version.spring>6.2.1</version.spring>
         <version.junit>4.12</version.junit>
 
         <version.processor.plugin>3.3.2</version.processor.plugin>
@@ -27,12 +27,12 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- Actually we only need JPA but since there is no official artifact we rather use this than provider specific apis -->
             <dependency>
-                <groupId>javax</groupId>
-                <artifactId>javaee-api</artifactId>
-                <version>7.0</version>
-                <scope>provided</scope>
+                <groupId>jakarta.platform</groupId>
+                <artifactId>jakarta.jakartaee-bom</artifactId>
+                <version>10.0.0</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
 
             <!-- Test -->
@@ -103,7 +103,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-checkstyle-plugin</artifactId>
-                <version>${version.checkstyle.plugin}</version>
                 <configuration>
                     <configLocation>blaze-actor/checkstyle-config.xml</configLocation>
                     <suppressionsLocation>blaze-actor/checkstyle-suppressions.xml</suppressionsLocation>

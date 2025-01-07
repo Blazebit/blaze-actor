@@ -16,8 +16,8 @@
 
 package com.blazebit.actor.integration.cdi;
 
-import javax.enterprise.inject.Default;
-import javax.enterprise.util.AnnotationLiteral;
+import jakarta.enterprise.inject.Default;
+import jakarta.enterprise.util.AnnotationLiteral;
 
 /**
  * Literal for {@link Default}
